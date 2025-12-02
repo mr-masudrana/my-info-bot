@@ -80,5 +80,100 @@ def webhook():
                     f"📛 <b>Last_Name:</b> {last_name}\n"
                     f"🔗 <b>Username:</b> {username}\n"
                     f"🌐 <b>Language:</b> {language}\n"
-                    f
+                    f"🤖 <b>Is Bot:</b> {is_bot}\n"
+                    f"🌟 <b>Premium:</b> {is_premium}"
+                )
+
+            # JSON DUMP
+            elif text == "/json":
+                target_msg = msg.get("reply_to_message", msg)
+                json_str = json.dumps(target_msg, indent=2)
+                if len(json_str) > 4000: json_str = json_str[:4000] + "..."
+                response_text = f"<pre>{json_str}</pre>"
+
+        # --- ২. ফরোয়ার্ডেড মেসেজ ডিটেকশন ---
+        if not response_text and "forward_date" in msg:
+            if "forward_from_chat" in msg:
+                f_chat = msg["forward_from_chat"]
+                c_title = f_chat.get("title", "No Title")
+                c_username = f"@{f_chat['username']}" if "username" in f_chat else "Private"
+                c_id = f_chat["id"]
+                
+                response_text = (
+                    f"📢 <b>CHANNEL SOURCE</b>\n\n"
+                    f"📛 <b>Title:</b> {c_title}\n"
+                    f"🆔 <b>ID:</b> <code>{c_id}</code>\n"
+                    f"🔗 <b>Username:</b> {c_username}"
+                )
+            
+            elif "forward_from" in msg:
+                f_user = msg["forward_from"]
+                u_name = f_user.get("first_name", "")
+                u_id = f_user["id"]
+                u_user = f"@{f_user['username']}" if "username" in f_user else "None"
+                
+                response_text = (
+                    f"👤 <b>USER SOURCE</b>\n\n"
+                    f"📛 <b>Name:</b> {u_name}\n"
+                    f"🆔 <b>ID:</b> <code>{u_id}</code>\n"
+                    f"🔗 <b>Username:</b> {u_user}"
+                )
+            
+            elif "forward_sender_name" in msg:
+                response_text = (
+                    f"🔒 <b>HIDDEN USER</b>\n\n"
+                    f"📛 <b>Name:</b> {msg['forward_sender_name']}\n"
+                    "⚠️ <i>ID পাওয়া সম্ভব নয়।</i>"
+                )
+
+        # --- ৩. মিডিয়া ইনফো ---
+        if not response_text:
+            media_type = "Unknown"
+            file_id = "N/A"
+            file_size = 0
+            
+            if "photo" in msg:
+                media_type = "Photo"
+                photo = msg["photo"][-1]
+                file_id = photo["file_id"]
+                file_size = photo.get("file_size", 0)
+            elif "video" in msg:
+                media_type = "Video"
+                video = msg["video"]
+                file_id = video["file_id"]
+                file_size = video.get("file_size", 0)
+            elif "document" in msg:
+                media_type = "Document"
+                doc = msg["document"]
+                file_id = doc["file_id"]
+                file_size = doc.get("file_size", 0)
+            elif "sticker" in msg:
+                media_type = "Sticker"
+                sticker = msg["sticker"]
+                file_id = sticker["file_id"]
+                file_size = sticker.get("file_size", 0)
+
+            if media_type != "Unknown":
+                readable_size = get_readable_size(file_size)
+                response_text = (
+                    f"💾 <b>MEDIA INFO</b>\n\n"
+                    f"🏷 <b>Type:</b> {media_type}\n"
+                    f"📦 <b>Size:</b> {readable_size}\n"
+                    f"🧩 <b>File ID:</b> <code>{file_id}</code>"
+                )
+
+        # মেসেজ না থাকলে (যেমন শুধু টেক্সট পাঠিয়েছে কিন্তু /start না) ডিফল্ট ইনফো
+        if not response_text and "text" in msg:
+             # এখানে চাইলে সাধারণ মেসেজের রিপ্লাই দিতে পারেন, 
+             # অথবা কিছুই না দিলে ইউজার কিছু পাবে না।
+             pass 
+
+        if response_text:
+            send_message(chat_id, response_text, message_id)
+
+        return "ok", 200
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return "error", 200
                 

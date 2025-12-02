@@ -1,139 +1,126 @@
 from flask import Flask, request
-import telegram
 import os
-import asyncio
-import json
-
-# এনভায়রনমেন্ট ভেরিয়েবল থেকে টোকেন
-BOT_TOKEN = os.environ.get('BOT_TOKEN')
+import requests
 
 app = Flask(__name__)
-bot = telegram.Bot(token=BOT_TOKEN)
 
-# --- হেল্পার ফাংশন: তথ্য সুন্দর করে সাজানোর জন্য ---
-def get_user_profile_link(user_id):
-    return f'<a href="tg://user?id={user_id}">{user_id}</a>'
+# টোকেন এনভায়রনমেন্ট থেকে নেওয়া
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+# টেলিগ্রাম এপিআই বেস URL
+BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-def format_info(data_dict, title="INFO"):
-    """যেকোনো ডেটাকে সুন্দর লিস্ট আকারে দেখাবে"""
-    text = f"<b>ℹ️ {title}</b>\n\n"
-    for key, value in data_dict.items():
-        if value:  # যদি ভ্যালু থাকে তবেই দেখাবে
-            text += f"<b>🔹 {key}:</b> {value}\n"
-    return text
+def send_message(chat_id, text, reply_to=None):
+    """মেসেজ পাঠানোর ফাংশন (Synchronous)"""
+    url = f"{BASE_URL}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
+    }
+    if reply_to:
+        payload["reply_to_message_id"] = reply_to
+    
+    # সরাসরি রিকোয়েস্ট পাঠানো (কোনো async ঝামেলা নেই)
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Error sending message: {e}")
 
 @app.route('/')
 def home():
-    return "Advanced Info Bot is Running! 🛡️"
+    return "Bot is running perfectly! 🟢"
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    # আপডেট রিসিভ করা
     try:
+        # টেলিগ্রাম থেকে আসা ডেটা (JSON)
         data = request.get_json(force=True)
-        update = telegram.Update.de_json(data, bot)
-    except Exception as e:
-        return "Error parsing update", 400
-
-    # শুধুমাত্র মেসেজ হ্যান্ডেল করব (এডিট বা অন্য কিছু নয়)
-    if update.message:
-        msg = update.message
-        chat_id = msg.chat.id
         
-        # রেসপন্স পাঠানোর ফাংশন
-        async def send_response(text, reply_to=None):
-            try:
-                await bot.send_message(
-                    chat_id=chat_id, 
-                    text=text, 
-                    parse_mode='HTML', 
-                    reply_to_message_id=reply_to,
-                    disable_web_page_preview=True
-                )
-            except Exception as e:
-                print(f"Error sending message: {e}")
+        # ডিবাগিং: লগ চেক করার জন্য
+        # print(data)
 
-        final_response = ""
-
-        # ১. যদি /start কমান্ড দেয়
-        if msg.text and msg.text == "/start":
-            user = msg.from_user
-            info = {
-                "Name": user.full_name,
-                "ID": f"<code>{user.id}</code>",
-                "Username": f"@{user.username}" if user.username else "N/A",
-                "Language": user.language_code,
-                "Is Bot": "Yes" if user.is_bot else "No"
-            }
-            final_response = (
-                f"👋 হ্যালো <b>{user.first_name}</b>!\n\n"
-                "আমি একটি <b>অ্যাডভান্সড ইনফো বট</b>।\n"
-                "আমার কাজ হলো যেকোনো চ্যাট, ইউজার বা চ্যানেলের গোপন তথ্য বের করা।\n\n"
-                "🔍 <b>কিভাবে ব্যবহার করবেন?</b>\n"
-                "১. যেকোনো মেসেজ আমার কাছে <b>Forward</b> করুন।\n"
-                "২. আমি ওই মেসেজের সোর্স, চ্যানেল আইডি বা ইউজার আইডি বলে দেব।\n\n"
-                f"{format_info(info, 'YOUR PROFILE')}"
-            )
-
-        # ২. যদি কোনো মেসেজ FORWARD করা হয় (সবচেয়ে গুরুত্বপূর্ণ অংশ)
-        elif msg.forward_date:
-            # ক) চ্যানেল থেকে ফরোয়ার্ড হলে
-            if msg.forward_from_chat:
-                chat = msg.forward_from_chat
-                info = {
-                    "Type": chat.type.upper(),  # Channel or Supergroup
-                    "Title": chat.title,
-                    "ID": f"<code>{chat.id}</code>", # কপি করার জন্য মোনোস্পেস
-                    "Username": f"@{chat.username}" if chat.username else "Private/No Username",
-                    "Link": f"{chat.invite_link}" if chat.invite_link else None
-                }
-                final_response = format_info(info, "📢 CHANNEL/GROUP INFO")
-
-            # খ) কোনো ইউজার থেকে ফরোয়ার্ড হলে
-            elif msg.forward_from:
-                user = msg.forward_from
-                info = {
-                    "Name": user.full_name,
-                    "ID": f"<code>{user.id}</code>",
-                    "Username": f"@{user.username}" if user.username else "N/A",
-                    "Bot": "Yes" if user.is_bot else "No"
-                }
-                final_response = format_info(info, "👤 FORWARDED USER INFO")
-
-            # গ) যদি ইউজার প্রাইভেসি দিয়ে রাখে (Hidden Sender)
-            elif msg.forward_sender_name:
-                final_response = (
-                    "<b>🔒 HIDDEN USER DETECTED</b>\n\n"
-                    f"<b>🔹 Name:</b> {msg.forward_sender_name}\n"
-                    "<i>ব্যবহারকারী তার প্রোফাইল হাইড করে রেখেছেন, তাই ID পাওয়া সম্ভব নয়।</i>"
-                )
-
-        # ৩. যদি সাধারণ মেসেজ দেয় (ফরোয়ার্ড না)
-        else:
-            # এখানে আমরা ইউজারের নিজের তথ্য আবার দেখাবো অথবা মিডিয়া ইনফো দেব
-            content_type = "Text"
-            if msg.sticker: content_type = "Sticker"
-            elif msg.photo: content_type = "Photo"
-            elif msg.document: content_type = "Document"
-            elif msg.video: content_type = "Video"
-
-            info = {
-                "Content Type": content_type,
-                "Message ID": msg.message_id,
-                "Your ID": f"<code>{msg.from_user.id}</code>",
-                "Chat Type": msg.chat.type.capitalize()
-            }
+        # মেসেজ আছে কিনা চেক করা
+        if "message" in data:
+            msg = data["message"]
+            chat_id = msg["chat"]["id"]
+            message_id = msg["message_id"]
             
-            # স্টিকার হলে ফাইল আইডি সহ দেখাবো
-            if msg.sticker:
-                info["Emoji"] = msg.sticker.emoji
-                info["File ID"] = f"<code>{msg.sticker.file_id}</code>"
+            response_text = ""
 
-            final_response = format_info(info, "📝 MESSAGE INFO")
+            # ১. টেক্সট লজিক (/start)
+            if "text" in msg:
+                text = msg["text"]
+                if text == "/start":
+                    user_first_name = msg["from"]["first_name"]
+                    response_text = (
+                        f"👋 হ্যালো <b>{user_first_name}</b>!\n\n"
+                        "আমি এখন সম্পূর্ণ স্ট্যাবল (Stable) মোডে চলছি।\n"
+                        "কোনো মেসেজ ফরোয়ার্ড করুন, আমি ডিটেইলস দেব।"
+                    )
+            
+            # ২. ফরোয়ার্ড করা মেসেজ হ্যান্ডেলিং
+            if "forward_date" in msg:
+                # ক) চ্যানেল থেকে
+                if "forward_from_chat" in msg:
+                    f_chat = msg["forward_from_chat"]
+                    title = f_chat.get("title", "No Title")
+                    username = f"@{f_chat['username']}" if "username" in f_chat else "Private"
+                    c_id = f_chat["id"]
+                    
+                    response_text = (
+                        f"📢 <b>CHANNEL INFO</b>\n\n"
+                        f"🔹 <b>Title:</b> {title}\n"
+                        f"🔹 <b>ID:</b> <code>{c_id}</code>\n"
+                        f"🔹 <b>Username:</b> {username}"
+                    )
+                
+                # খ) ইউজার থেকে
+                elif "forward_from" in msg:
+                    f_user = msg["forward_from"]
+                    name = f_user.get("first_name", "")
+                    u_id = f_user["id"]
+                    
+                    response_text = (
+                        f"👤 <b>USER INFO</b>\n\n"
+                        f"🔹 <b>Name:</b> {name}\n"
+                        f"🔹 <b>ID:</b> <code>{u_id}</code>"
+                    )
+                
+                # গ) গোপন ইউজার (Hidden User)
+                elif "forward_sender_name" in msg:
+                    sender_name = msg["forward_sender_name"]
+                    response_text = (
+                        f"🔒 <b>HIDDEN USER</b>\n\n"
+                        f"🔹 <b>Name:</b> {sender_name}\n"
+                        "<i>ID পাওয়া যায়নি (প্রাইভেসি অন)।</i>"
+                    )
 
-        # মেসেজ পাঠানো
-        if final_response:
-            asyncio.run(send_response(final_response, msg.message_id))
+            # ৩. সাধারণ মেসেজ (যদি উপরের কোনোটি না হয় এবং রেসপন্স খালি থাকে)
+            if not response_text:
+                # ইউজারের নিজের আইডি দেখানো
+                user_id = msg["from"]["id"]
+                chat_type = msg["chat"]["type"].capitalize()
+                
+                content_type = "Text"
+                if "sticker" in msg: content_type = "Sticker"
+                elif "photo" in msg: content_type = "Photo"
+                elif "video" in msg: content_type = "Video"
+                
+                response_text = (
+                    f"📝 <b>MESSAGE INFO</b>\n\n"
+                    f"🔹 <b>Type:</b> {content_type}\n"
+                    f"🔹 <b>Your ID:</b> <code>{user_id}</code>\n"
+                    f"🔹 <b>Chat Type:</b> {chat_type}"
+                )
 
-    return "ok"
-    
+            # মেসেজ পাঠানো
+            if response_text:
+                send_message(chat_id, response_text, message_id)
+
+        return "ok", 200
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return "error", 200
+        

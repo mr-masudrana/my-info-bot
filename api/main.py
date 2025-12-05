@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, redirect
 import os
 import requests
 import json
@@ -19,10 +19,24 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN')
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 MAIL_API_URL = "https://api.mail.tm"
 
-# ইউজার স্টেট (মেমোরি)
+# গ্লোবাল ভেরিয়েবল (ইউজারনেম ক্যাশ করার জন্য)
+BOT_USERNAME = None
 user_states = {}
 
-# --- ১. মেনু বাটন ---
+# --- ১. অটোমেটিক ইউজারনেম বের করা (রিডাইরেক্টের জন্য) ---
+def get_bot_username():
+    global BOT_USERNAME
+    if BOT_USERNAME: return BOT_USERNAME
+    try:
+        response = requests.get(f"{BASE_URL}/getMe")
+        data = response.json()
+        if data["ok"]:
+            BOT_USERNAME = data["result"]["username"]
+            return BOT_USERNAME
+    except: pass
+    return None
+
+# --- ২. মেনু বাটন ---
 def get_main_menu():
     return json.dumps({
         "keyboard": [
@@ -42,7 +56,7 @@ def get_voice_menu(): return json.dumps({"keyboard": [[{"text": "🗣 Text to Vo
 def get_image_menu(): return json.dumps({"keyboard": [[{"text": "⚫ Grayscale"}, {"text": "📐 Resize (50%)"}], [{"text": "🔙 Back"}]], "resize_keyboard": True})
 def get_text_menu(): return json.dumps({"keyboard": [[{"text": "🔐 Base64 Enc"}, {"text": "🔓 Base64 Dec"}], [{"text": "#️⃣ MD5 Hash"}, {"text": "🔠 Uppercase"}], [{"text": "🔙 Back"}]], "resize_keyboard": True})
 
-# --- ২. হেল্পার ফাংশন ---
+# --- ৩. হেল্পার ফাংশন ---
 def send_reply(chat_id, text, reply_markup=None):
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
     if reply_markup: payload["reply_markup"] = reply_markup
@@ -78,7 +92,7 @@ def format_duration(seconds):
     m, s = divmod(seconds, 60)
     return f"{m:02d}:{s:02d}"
 
-# --- ৩. Temp Mail API ---
+# --- ৪. Temp Mail API ---
 def create_mail_account():
     try:
         domain = requests.get(f"{MAIL_API_URL}/domains").json()['hydra:member'][0]['domain']
@@ -107,9 +121,15 @@ def read_mail(msg_id, token):
         return requests.get(f"{MAIL_API_URL}/messages/{msg_id}", headers=headers).json()
     except: return None
 
-# --- মেইন রাউট ---
+# --- ৫. মেইন রাউট (HOME REDIRECT) ---
 @app.route('/')
-def home(): return "Bot with /help Command Running! 🚀"
+def home():
+    # ইউজারনেম নিয়ে সোজা টেলিগ্রামে পাঠিয়ে দেবে
+    username = get_bot_username()
+    if username:
+        return redirect(f"https://t.me/{username}")
+    else:
+        return "Bot is Running! (Check Telegram)"
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -154,7 +174,7 @@ def webhook():
             requests.post(f"{BASE_URL}/answerCallbackQuery", json={"callback_query_id": call["id"]})
             return "ok", 200
 
-        # --- TEXT MESSAGES ---
+        # --- TEXT MESSAGES & FILES ---
         if "message" in data:
             msg = data["message"]
             chat_id = msg["chat"]["id"]
@@ -183,23 +203,16 @@ def webhook():
                 )
                 send_reply(chat_id, start_msg, get_main_menu())
 
-            # --- HELP COMMAND (নতুন যুক্ত করা হয়েছে) ---
             elif text == "/help":
                 help_text = (
                     "🤖 <b>বট গাইডলাইন (Help Menu)</b>\n\n"
-                    "আমি একটি মাল্টি-ফাংশনাল টুল বট। নিচে আমার ফিচারগুলো দেওয়া হলো:\n\n"
+                    "আমি একটি মাল্টি-ফাংশনাল টুল বট।\n\n"
                     "<b>১. অটোমেটিক ইনফো (Auto Info):</b>\n"
-                    "🔹 যেকোনো মেসেজ <b>Forward</b> করুন, আমি তার গোপন আইডি ও সোর্স বলে দেব।\n"
-                    "🔹 যেকোনো ফাইল/ছবি/ভিডিও পাঠান, আমি তার সাইজ ও ডিটেইলস দেব।\n\n"
-                    "<b>২. মেনু টুলস (Menu Tools):</b>\n"
-                    "📧 <b>Temp Mail:</b> আনলিমিটেড টেম্পোরারি মেইল ও ইনবক্স।\n"
-                    "🛠 <b>Generator:</b> QR Code, Password, Link Shortener.\n"
-                    "📂 <b>PDF Tools:</b> ছবি বা লেখা থেকে PDF তৈরি।\n"
-                    "🗣 <b>Voice Tools:</b> লেখা (English) থেকে ভয়েস তৈরি।\n"
-                    "🖼 <b>Image Tools:</b> ছবির সাইজ কমানো, সাদা-কালো করা।\n"
-                    "📝 <b>Text Tools:</b> Base64, Hash, Uppercase ইত্যাদি।\n\n"
-                    "🚀 <b>শুরু করবেন কিভাবে?</b>\n"
-                    "নিচের মেনু বাটনগুলো ব্যবহার করুন অথবা /start চাপুন।"
+                    "🔹 মেসেজ Forward করুন সোর্স জানতে।\n"
+                    "🔹 ফাইল পাঠান ডিটেইলস জানতে।\n\n"
+                    "<b>২. মেনু টুলস:</b>\n"
+                    "📧 Temp Mail, QR Generator, PDF Tools, Voice Tools ইত্যাদি।\n\n"
+                    "🚀 <b>শুরু করতে নিচের বাটন চাপুন।</b>"
                 )
                 send_reply(chat_id, help_text)
 
@@ -264,7 +277,6 @@ def webhook():
             
             # --- Input Handling ---
             else:
-                # ক) Forwarded Info
                 if "forward_date" in msg:
                     chat = msg.get("forward_from_chat")
                     user = msg.get("forward_from")
@@ -294,7 +306,6 @@ def webhook():
                         )
                     send_reply(chat_id, info)
 
-                # খ) File Info
                 elif (msg.get("photo") or msg.get("document") or msg.get("video") or msg.get("audio")):
                     if state == "img2pdf" and "photo" in msg:
                          file_id = msg["photo"][-1]["file_id"]
@@ -329,7 +340,6 @@ def webhook():
                         icon = "📁"
                         type_name = "UNKNOWN"
                         details = ""
-                        
                         if "document" in msg:
                             doc = msg["document"]
                             icon = "📄"
@@ -374,7 +384,6 @@ def webhook():
                         )
                         send_reply(chat_id, info_msg)
 
-                # গ) Text Tools
                 elif state and text:
                     if state == "qr":
                         img = qrcode.make(text)
@@ -414,5 +423,4 @@ def webhook():
 
     except Exception as e:
         print(f"Error: {e}")
-        return "error", 200
-                                                     
+        return "error", 200                                 

@@ -75,13 +75,14 @@ If you see `Webhook was set`, your bot is live! 🎉
 ---
 
 ## 📂 Project Structure
+```
 .
 ├── api/
 │   └── index.py        # Main bot logic
 ├── requirements.txt    # Python dependencies
 ├── vercel.json         # Vercel configuration
 └── README.md           # Documentation
-
+```
 ---
 
 ## 🛠 Built With

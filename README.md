@@ -66,7 +66,7 @@ During deployment on Vercel, add the following **Environment Variable**:
 After deployment, Vercel will give you a domain (e.g., `https://my-bot.vercel.app`). You need to connect it to Telegram.
 
 Open your browser and visit:
-`https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=<YOUR_VERCEL_URL>/webhook`
+```https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=<YOUR_VERCEL_URL>/webhook```
 
 *Replace `<YOUR_BOT_TOKEN>` with your token and `<YOUR_VERCEL_URL>` with your Vercel domain.*
 
